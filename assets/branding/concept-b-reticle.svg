@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Chassis Base -->
+  <rect x="16" y="16" width="224" height="224" rx="40" fill="#181E29" stroke="#DC2626" stroke-width="12"/>
+
+  <!-- Corner Reticle Brackets -->
+  <path d="M 44 76 L 44 44 L 76 44" fill="none" stroke="#38BDF8" stroke-width="10" stroke-linecap="round"/>
+  <path d="M 212 76 L 212 44 L 180 44" fill="none" stroke="#38BDF8" stroke-width="10" stroke-linecap="round"/>
+  <path d="M 44 180 L 44 212 L 76 212" fill="none" stroke="#38BDF8" stroke-width="10" stroke-linecap="round"/>
+  <path d="M 212 180 L 212 212 L 180 212" fill="none" stroke="#38BDF8" stroke-width="10" stroke-linecap="round"/>
+
+  <!-- Central Field Circle -->
+  <circle cx="128" cy="128" r="54" fill="#0F172A" stroke="#DC2626" stroke-width="8"/>
+
+  <!-- Sighting Crosshair Notches -->
+  <line x1="128" y1="56" x2="128" y2="82" stroke="#38BDF8" stroke-width="8" stroke-linecap="round"/>
+  <line x1="128" y1="174" x2="128" y2="200" stroke="#38BDF8" stroke-width="8" stroke-linecap="round"/>
+  <line x1="56" y1="128" x2="82" y2="128" stroke="#38BDF8" stroke-width="8" stroke-linecap="round"/>
+  <line x1="174" y1="128" x2="200" y2="128" stroke="#38BDF8" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Central Optical Core Dot -->
+  <circle cx="128" cy="128" r="22" fill="#0284C7"/>
+  <circle cx="122" cy="122" r="6" fill="#FFFFFF"/>
+</svg>

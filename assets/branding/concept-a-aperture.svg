@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Outer Bezel Ring -->
+  <circle cx="128" cy="128" r="120" fill="#181E29" stroke="#DC2626" stroke-width="12"/>
+  
+  <!-- Outer Sensor Cavity -->
+  <circle cx="128" cy="128" r="100" fill="#0F172A"/>
+
+  <!-- Four Precision Sighting Calipers / Aperture Blades -->
+  <!-- Top Caliper -->
+  <path d="M 128 32 L 140 68 L 116 68 Z" fill="#DC2626"/>
+  <!-- Bottom Caliper -->
+  <path d="M 128 224 L 140 188 L 116 188 Z" fill="#DC2626"/>
+  <!-- Left Caliper -->
+  <path d="M 32 128 L 68 116 L 68 140 Z" fill="#DC2626"/>
+  <!-- Right Caliper -->
+  <path d="M 224 128 L 188 116 L 188 140 Z" fill="#DC2626"/>
+
+  <!-- Optical Lens Outer Ring -->
+  <circle cx="128" cy="128" r="68" fill="#1E293B" stroke="#38BDF8" stroke-width="6"/>
+
+  <!-- Spherical Cobalt Sensor Core -->
+  <circle cx="128" cy="128" r="54" fill="#0284C7"/>
+
+  <!-- Inner Pupil -->
+  <circle cx="128" cy="128" r="30" fill="#0369A1"/>
+
+  <!-- Optical Specular Glint Highlight -->
+  <circle cx="112" cy="110" r="14" fill="#FFFFFF" opacity="0.9"/>
+  <circle cx="140" cy="142" r="6" fill="#BAE6FD" opacity="0.75"/>
+</svg>

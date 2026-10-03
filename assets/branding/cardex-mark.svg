@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>CarDex Brand Mark</title>
+  <!-- Outer Protective Bezel -->
+  <circle cx="128" cy="128" r="116" fill="#181E29" stroke="#DC2626" stroke-width="12"/>
+  
+  <!-- Optical Instrument Well -->
+  <circle cx="128" cy="128" r="96" fill="#0F172A"/>
+
+  <!-- Four Precision Sighting Calipers -->
+  <!-- Top -->
+  <polygon points="128,38 142,76 114,76" fill="#DC2626"/>
+  <!-- Bottom -->
+  <polygon points="128,218 142,180 114,180" fill="#DC2626"/>
+  <!-- Left -->
+  <polygon points="38,128 76,114 76,142" fill="#DC2626"/>
+  <!-- Right -->
+  <polygon points="218,128 180,114 180,142" fill="#DC2626"/>
+
+  <!-- Spherical Cobalt Sensor Lens -->
+  <circle cx="128" cy="128" r="64" fill="#0284C7"/>
+  <!-- Inner Optical Pupil -->
+  <circle cx="128" cy="128" r="40" fill="#0369A1"/>
+
+  <!-- Specular Lens Glint -->
+  <circle cx="110" cy="110" r="14" fill="#FFFFFF"/>
+  <circle cx="146" cy="146" r="6" fill="#FFFFFF" opacity="0.8"/>
+</svg>
