@@ -1,5 +1,6 @@
 export interface Env {
   GEMINI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 }
 
 interface IdentifyRequestBody {
@@ -79,6 +80,111 @@ function checkRateLimit(clientIp: string, maxRequests = 20, windowMs = 60000): b
   return true;
 }
 
+// OpenRouter Free Vision Fallback for when Google Gemini quotas are temporarily exhausted
+async function callOpenRouterFallback(
+  apiKey: string,
+  image: string,
+  mimeType: string
+): Promise<VehicleIdentificationResponse | null> {
+  const freeVisionModels = [
+    'google/gemini-2.0-flash-lite:free',
+    'meta-llama/llama-3.2-11b-vision-instruct:free',
+    'qwen/qwen-2.5-vl-72b-instruct:free',
+  ];
+
+  for (const model of freeVisionModels) {
+    try {
+      console.log(`[CARDEX-OPENROUTER] Trying free fallback model: ${model}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+          'HTTP-Referer': 'https://cardex.app',
+          'X-Title': 'CarDex',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text:
+                    'You are an expert automotive identification system for the CarDex field guide. ' +
+                    'Identify the passenger vehicle in this photo. Respond ONLY with valid JSON strictly conforming to this schema:\n' +
+                    '{"make": string, "model": string, "variant": string|null, "colour_name": string, "confidence": number, "top3": [{"make": string, "model": string, "confidence": number}], "car_bbox": {"x": number, "y": number, "width": number, "height": number}}\n' +
+                    'If no car is present, set make: "NO_CAR", model: "NONE", colour_name: "NONE", confidence: 0.0.',
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mimeType};base64,${image}`,
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        console.log(`[CARDEX-OPENROUTER] Model ${model} returned status ${res.status}`);
+        continue;
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const content = data.choices?.[0]?.message?.content;
+      if (!content) continue;
+
+      let clean = content.trim();
+      if (clean.includes('```')) {
+        clean = clean.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+      }
+      const firstBrace = clean.indexOf('{');
+      const lastBrace = clean.lastIndexOf('}');
+      if (firstBrace === -1 || lastBrace === -1) continue;
+
+      const parsed = JSON.parse(clean.slice(firstBrace, lastBrace + 1));
+      if (parsed && typeof parsed.make === 'string' && typeof parsed.model === 'string') {
+        console.log(`[CARDEX-OPENROUTER] Successfully identified car with ${model}`);
+        return {
+          make: sanitizeString(parsed.make),
+          model: sanitizeString(parsed.model),
+          variant: parsed.variant ? sanitizeString(parsed.variant) : null,
+          colour_name: sanitizeString(parsed.colour_name || 'Silver'),
+          confidence: Math.max(0.0, Math.min(1.0, typeof parsed.confidence === 'number' ? parsed.confidence : 0.85)),
+          top3: Array.isArray(parsed.top3)
+            ? parsed.top3.slice(0, 3).map((item: { make?: string; model?: string; confidence?: number }) => ({
+                make: sanitizeString(item?.make || 'Unknown'),
+                model: sanitizeString(item?.model || 'Unknown'),
+                confidence: Math.max(0.0, Math.min(1.0, typeof item?.confidence === 'number' ? item?.confidence : 0.5)),
+              }))
+            : [],
+          car_bbox: {
+            x: Math.max(0, Math.min(1, typeof parsed.car_bbox?.x === 'number' ? parsed.car_bbox.x : 0.05)),
+            y: Math.max(0, Math.min(1, typeof parsed.car_bbox?.y === 'number' ? parsed.car_bbox.y : 0.05)),
+            width: Math.max(0.1, Math.min(1, typeof parsed.car_bbox?.width === 'number' ? parsed.car_bbox.width : 0.9)),
+            height: Math.max(0.1, Math.min(1, typeof parsed.car_bbox?.height === 'number' ? parsed.car_bbox.height : 0.9)),
+          },
+        };
+      }
+    } catch (err) {
+      console.log(`[CARDEX-OPENROUTER] Error with ${model}: ${err}`);
+    }
+  }
+  return null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     if (request.method === 'OPTIONS') {
@@ -95,11 +201,18 @@ export default {
 
     // Health check endpoint
     if ((url.pathname === '/health' || url.pathname === '/') && request.method === 'GET') {
+      const openrouterConfigured = Boolean(
+        env.OPENROUTER_API_KEY ||
+        (typeof process !== 'undefined' && process.env ? process.env.OPENROUTER_API_KEY : undefined)
+      );
       return jsonResponse({
         ok: true,
         status: 'online',
         service: 'cardex-proxy',
-        model: 'gemini-3.5-flash',
+        primary_model: 'gemini-3.5-flash-lite',
+        fallback_models: ['gemini-2.5-flash-lite', 'gemini-3.5-flash'],
+        openrouter_backup: openrouterConfigured ? 'ACTIVE' : 'OPTIONAL_NOT_SET',
+        quota_tier: '500 RPD / 15 RPM',
         timestamp: new Date().toISOString(),
       });
     }
@@ -113,8 +226,10 @@ export default {
     }
 
     // Rate limiting abuse protection on /identify
-    const clientIp = request.headers.get('cf-connecting-ip') || 'global';
-    if (!checkRateLimit(clientIp, 20, 60000)) {
+    const cfIp = request.headers.get('cf-connecting-ip');
+    const clientIp = cfIp || 'local-dev';
+    const limit = cfIp ? 20 : 35; // Allow slightly higher threshold during local development
+    if (!checkRateLimit(clientIp, limit, 60000)) {
       console.log(`[CARDEX] Rate limit exceeded for IP: ${clientIp}`);
       return jsonResponse(
         {
@@ -125,10 +240,14 @@ export default {
       );
     }
 
-    // Support both Cloudflare Worker secret binding (env.GEMINI_API_KEY) and process-level env for local testing
+    // Support both Cloudflare Worker secret binding and process-level env for local testing
     const apiKey =
       env.GEMINI_API_KEY ||
       (typeof process !== 'undefined' && process.env ? process.env.GEMINI_API_KEY : undefined);
+
+    const openrouterKey =
+      env.OPENROUTER_API_KEY ||
+      (typeof process !== 'undefined' && process.env ? process.env.OPENROUTER_API_KEY : undefined);
 
     if (!apiKey) {
       console.log('[CARDEX] Server configuration error: GEMINI_API_KEY missing');
@@ -238,37 +357,83 @@ export default {
       },
     };
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+    // Models arranged by quota availability on Google AI Studio:
+    // 1. gemini-3.5-flash-lite: 500 RPD, 15 RPM (highest free tier allowance)
+    // 2. gemini-2.5-flash-lite: 20 RPD, 10 RPM (backup lite model)
+    // 3. gemini-3.5-flash: 20 RPD, 5 RPM (standard model)
+    const CANDIDATE_MODELS = [
+      'gemini-3.5-flash-lite',
+      'gemini-2.5-flash-lite',
+      'gemini-3.5-flash',
+    ];
 
     try {
-      console.log('[CARDEX] Gemini request started (gemini-3.5-flash)');
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000);
+      let upstreamResponse: Response | null = null;
+      let lastStatus = 500;
 
-      const upstreamResponse = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(geminiPayload),
-        signal: controller.signal,
-      });
+      for (const model of CANDIDATE_MODELS) {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        console.log(`[CARDEX] Requesting model: ${model}`);
 
-      clearTimeout(timeoutId);
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 25000);
 
-      console.log(`[CARDEX] Gemini status: ${upstreamResponse.status}`);
+          const response = await fetch(geminiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(geminiPayload),
+            signal: controller.signal,
+          });
 
-      if (upstreamResponse.status === 429) {
-        console.log('[CARDEX] returning: 429');
-        return jsonResponse(
-          {
-            error: 'AI LIMIT REACHED: Free AI quota is temporarily exhausted. Try again later.',
-            code: 'RATE_LIMITED',
-          },
-          429
-        );
+          clearTimeout(timeoutId);
+          console.log(`[CARDEX] Model ${model} status: ${response.status}`);
+
+          if (response.status === 429) {
+            console.log(`[CARDEX] Model ${model} quota exhausted (429). Falling back to next candidate...`);
+            lastStatus = 429;
+            continue;
+          }
+
+          if (response.status === 503) {
+            console.log(`[CARDEX] Model ${model} busy (503). Falling back to next candidate...`);
+            lastStatus = 503;
+            continue;
+          }
+
+          upstreamResponse = response;
+          break;
+        } catch (fetchErr) {
+          console.log(`[CARDEX] Model ${model} request error: ${fetchErr}`);
+        }
       }
 
-      if (upstreamResponse.status === 503) {
-        console.log('[CARDEX] returning: 503');
+      if (!upstreamResponse) {
+        // If Google Gemini quotas are exhausted, try OpenRouter free vision models if key is provided
+        if (openrouterKey) {
+          console.log('[CARDEX] All Gemini models exhausted. Invoking OpenRouter free vision models fallback...');
+          const fallbackResult = await callOpenRouterFallback(openrouterKey, image, mime_type);
+          if (fallbackResult) {
+            if (fallbackResult.make.toUpperCase() === 'NO_CAR') {
+              return jsonResponse(
+                { error: 'No recognizable passenger vehicle detected in this image. Try a clearer photo containing one car.', code: 'NO_CAR_FOUND' },
+                422
+              );
+            }
+            return jsonResponse(fallbackResult, 200);
+          }
+        }
+
+        if (lastStatus === 429) {
+          console.log('[CARDEX] returning: 429 (all models exhausted)');
+          return jsonResponse(
+            {
+              error: 'AI LIMIT REACHED: Free AI quota is temporarily exhausted on all fallback models. Please wait a minute and try again.',
+              code: 'RATE_LIMITED',
+            },
+            429
+          );
+        }
         return jsonResponse(
           {
             error: 'AI service is currently experiencing high demand. Please try again shortly.',

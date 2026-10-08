@@ -1,0 +1,11 @@
+# CarDex Proxy Local Development Secrets (Wrangler dev)
+# Copy this file to .dev.vars in this directory:
+#   cp .dev.vars.example .dev.vars
+# NEVER commit .dev.vars to Git (.dev.vars is already gitignored).
+
+# Primary AI Provider (Google AI Studio)
+GEMINI_API_KEY="your-gemini-api-key"
+
+# Optional Fallback Provider (OpenRouter free models)
+# OpenRouter is only called if all Gemini free quotas are temporarily exhausted.
+OPENROUTER_API_KEY="your-openrouter-api-key"

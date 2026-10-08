@@ -33,9 +33,29 @@ export default function ScanScreen() {
   const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
+  const [retryCooldown, setRetryCooldown] = useState(0);
 
   const isRequestInFlight = useRef(false);
   const hasAutoTriggeredRef = useRef(false);
+
+  // Rate-limit cooldown timer to protect free quota
+  useEffect(() => {
+    if (state === 'ERROR' && errorDetails?.status === 429) {
+      setRetryCooldown(10);
+      const timer = setInterval(() => {
+        setRetryCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    } else {
+      setRetryCooldown(0);
+    }
+  }, [state, errorDetails?.status]);
 
   // Deterministic reset on entering/returning to Scan screen
   useFocusEffect(
@@ -46,6 +66,7 @@ export default function ScanScreen() {
         setSelectedImageUri(null);
         setImageDimensions(null);
         setErrorDetails(null);
+        setRetryCooldown(0);
         isRequestInFlight.current = false;
         hasAutoTriggeredRef.current = false;
       }
@@ -181,6 +202,7 @@ export default function ScanScreen() {
   }, [params.startScan]);
 
   const handleRetry = () => {
+    if (isRequestInFlight.current || retryCooldown > 0) return;
     if (selectedImageUri) {
       runPipeline(selectedImageUri, imageDimensions?.width, imageDimensions?.height);
     } else {
@@ -193,6 +215,7 @@ export default function ScanScreen() {
     setSelectedImageUri(null);
     setImageDimensions(null);
     setErrorDetails(null);
+    setRetryCooldown(0);
     isRequestInFlight.current = false;
   };
 
@@ -281,15 +304,22 @@ export default function ScanScreen() {
                         ) : (
                           <>
                             <Pressable
+                              disabled={retryCooldown > 0 || isBusy}
                               onPress={handleRetry}
                               accessibilityRole="button"
                               accessibilityLabel="Try scan again"
                               style={({ pressed }) => [
                                 styles.primaryErrorBtn,
-                                { backgroundColor: theme.hardwareBg, borderColor: theme.hardwareBorder, opacity: pressed ? 0.8 : 1 },
+                                {
+                                  backgroundColor: retryCooldown > 0 ? theme.cardBorder : theme.hardwareBg,
+                                  borderColor: theme.hardwareBorder,
+                                  opacity: retryCooldown > 0 ? 0.6 : pressed ? 0.8 : 1,
+                                },
                               ]}
                             >
-                              <Text style={styles.primaryErrorBtnText}>TRY AGAIN</Text>
+                              <Text style={styles.primaryErrorBtnText}>
+                                {retryCooldown > 0 ? `WAIT ${retryCooldown}S` : 'TRY AGAIN'}
+                              </Text>
                             </Pressable>
 
                             <Pressable

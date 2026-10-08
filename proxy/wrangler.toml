@@ -6,5 +6,7 @@ compatibility_flags = ["nodejs_compat"]
 # Declare required secrets for Worker runtime
 # Secrets are supplied via process environment during local development
 # and via Cloudflare secret store in production.
+# GEMINI_API_KEY is required; OPENROUTER_API_KEY is an optional fallback.
 [secrets]
 required = ["GEMINI_API_KEY"]
+
